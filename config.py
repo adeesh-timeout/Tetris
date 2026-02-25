@@ -38,3 +38,11 @@ tetris_data = {
 }
 
 BLOCK_KEYS = list(tetris_data.keys())
+
+LINE_COMBO = {
+    0 : ['', 0],
+    1 : ["Single +100", 100],
+    2 : ["Double +300", 300],
+    3 : ["Triple +600", 600],
+    4 : ["Tetris +800", 800]
+}
