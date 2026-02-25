@@ -2,6 +2,7 @@ import pygame
 import os
 import random
 
+from Tools.scripts.generate_global_objects import Printer
 from pygame.mixer import pause
 
 # Change Directory # Random Error 01
@@ -19,30 +20,30 @@ pygame.font.init()
 clock = pygame.time.Clock()
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Tetris")
+
 FONT_1 = pygame.font.SysFont('Courier New', 30)
 FONT_2 = pygame.font.SysFont('Comic Sans MS', 40)
 
 FIRE = pygame.image.load(os.path.join('Data/image', 'fire.png'))
 FIRE = pygame.transform.smoothscale(FIRE, (20, 20))
 ICON = pygame.image.load(os.path.join('Data/image', 'tetris.png'))
-pygame.display.set_icon(ICON)
-
 PAUSE = pygame.image.load(os.path.join('Data/image', 'pause.png'))
 PAUSE = pygame.transform.smoothscale(PAUSE, (50, 50))
-
 PLAY = pygame.image.load(os.path.join('Data/image', 'play.png'))
 PLAY = pygame.transform.smoothscale(PLAY, (50, 50))
-
 VOLUME = pygame.image.load(os.path.join('Data/image', 'volume.png'))
 VOLUME = pygame.transform.smoothscale(VOLUME, (50, 50))
-
 MUTE = pygame.image.load(os.path.join('Data/image', 'mute.png'))
 MUTE = pygame.transform.smoothscale(MUTE, (50, 50))
+RESTART = pygame.image.load(os.path.join('Data/image', 'restart.png'))
+RESTART = pygame.transform.smoothscale(RESTART, (50, 50))
 
+pygame.display.set_icon(ICON)
 Block.init(screen, FIRE)
 
 pause_x, pause_y = rowcol_to_xy(15,10)
-pause_x += 220
+pause_x += 135
+pause_y += 50
 
 def box_layout_generator(x, y, rows,cols,side):
     height = side*rows
@@ -59,8 +60,11 @@ def display_status():
     text = FONT_2.render(f'Lines: {Block.lines}', 1, WHITE)
     screen.blit(text, (BOARD_X + BOARD_WIDTH + 100, BOARD_Y + 210))
 
-    text = FONT_2.render(f'Blocks: {str(Block.blocks)}', 1, WHITE)
+    text = FONT_2.render(f'Score: {str(int(Block.score))}', 1, WHITE)
     screen.blit(text, (BOARD_X + BOARD_WIDTH + 100, BOARD_Y + 290))
+
+    text = FONT_2.render(f'Blocks: {str(Block.blocks)}', 1, WHITE)
+    screen.blit(text, (BOARD_X + BOARD_WIDTH + 100, BOARD_Y + 370))
 
 def draw_layout():
     box_layout_generator(BOARD_X, BOARD_Y, 20, 10, SIDE)
@@ -69,26 +73,33 @@ def draw_layout():
     text = FONT_1.render('Next Block', 1, WHITE)
     screen.blit(text, (BOARD_X+BOARD_WIDTH+100, BOARD_Y))
 
-def game_over():
+def game_over(str_1):
     x, y = rowcol_to_xy(8, 0)
-    pygame.draw.rect(screen, (150, 0, 200), (x+SIDE+1, y+1, BOARD_WIDTH-1, -1 + SIDE*5))
-
-    text = FONT_2.render('Game Over', 1, WHITE)
-    screen.blit(text, (x+SIDE+1+50, y+1+10))
-
+    pygame.draw.rect(screen, (150, 0, 200), (x + SIDE + 1, y + 1, BOARD_WIDTH - 1, -1 + SIDE * 5))
     LOC_FONT = pygame.font.SysFont('Consolas', 20)
-    text = LOC_FONT.render('Press Enter to restart', 1, WHITE)
-    screen.blit(text, (x+SIDE+1+30, y+1+85))
+
+    text = FONT_2.render(str_1, 1, WHITE)
+    text_3 = LOC_FONT.render(f'Score: {str(int(Block.score))}', 1, WHITE)
+    text_2 = LOC_FONT.render('Press Enter to restart', 1, WHITE)
+
+    screen.blit(text, (x + SIDE + 1 + 50, y + 1 + 10))
+    screen.blit(text_3, (x + SIDE + 1 + 30, y + 1 + 85))
+    screen.blit(text_2, (x + SIDE + 1 + 30, y + 1 + 85+35))
 
     if keys[pygame.K_RETURN]:
-        Block.clear()
+        Block.reset()
 
 # First Block
 Block.spawn_block()
 
 def game_code():
-    for block in tetris_blocks:
-        block.update()
+    if Block.is_won != True:
+        for block in tetris_blocks:
+            block.update()
+
+        if not Block.is_pause:
+            block.check_win()
+
     Block.redraw_next_block()
 
 def check_pressed(box_x, box_y, side):
@@ -96,7 +107,7 @@ def check_pressed(box_x, box_y, side):
     if box_x < x < box_x + side and box_y < y < box_y + side: return True
     else: return False
 
-def pause_play():
+def func_buttons():
     if Block.is_pause:
         screen.blit(PLAY, (pause_x,pause_y))
 
@@ -108,11 +119,14 @@ def pause_play():
     else:
         screen.blit(PAUSE, (pause_x, pause_y))
 
-def volume_func():
+    # Volume
     if Block.is_volume:
-        screen.blit(VOLUME, (pause_x,pause_y+100))
+        screen.blit(VOLUME, (pause_x+100,pause_y))
     else:
-        screen.blit(MUTE, (pause_x, pause_y+100))
+        screen.blit(MUTE, (pause_x+100, pause_y))
+
+    # Reset Button
+    screen.blit(RESTART, (pause_x + 200, pause_y))
 
 while run:
     for event in pygame.event.get():
@@ -126,11 +140,14 @@ while run:
                 else:
                     Block.is_pause = True
 
-            if check_pressed(pause_x, pause_y+100, 50):
+            elif check_pressed(pause_x+100, pause_y, 50):
                 if Block.is_volume:
                     Block.is_volume = False
                 else:
                     Block.is_volume = True
+
+            elif check_pressed(pause_x+200, pause_y, 50):
+                Block.reset()
 
         if event.type == pygame.KEYDOWN:
             if not Block.is_pause:
@@ -155,18 +172,21 @@ while run:
     keys = pygame.key.get_pressed()
     screen.fill(GREY)
 
-    if keys[pygame.K_DOWN]:
+    if keys[pygame.K_DOWN] and not Block.is_pause:
         tetris_blocks[-1].move_block('D')
+        Block.score += 0.2
 
     # Main Code
     game_code()
     display_status()
     draw_layout()
-    pause_play()
-    volume_func()
+    func_buttons()
 
-    if Block.is_game_over:
-        game_over()
+    if Block.is_won == False:
+        game_over("Game Over")
+
+    elif Block.is_won == True:
+        game_over("You Won")
 
     pygame.display.update()
     clock.tick(FPS)
