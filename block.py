@@ -1,3 +1,5 @@
+from time import sleep
+
 from config import *
 import pygame
 import os
@@ -7,17 +9,17 @@ def rowcol_to_xy(row, col) -> tuple:
     return BOARD_X + SIDE * (col - 1), BOARD_Y + SIDE * (row - 1)
 
 grid = list(EMPTY_GRID)
-
 tetris_blocks = []
 
 pygame.mixer.init()
 DROP = pygame.mixer.Sound(os.path.join('Data/sound', 'drop.wav'))
 LOSE = pygame.mixer.Sound(os.path.join('Data/sound', 'lose.wav'))
+WIN = pygame.mixer.Sound(os.path.join('Data/sound', 'win.wav'))
 BREAK_LINE = pygame.mixer.Sound(os.path.join('Data/sound', 'break_line_1.wav'))
 
 class Block():
     screen = None
-    is_game_over = False
+    is_won = None
     next_block = random.choice(BLOCK_KEYS)
     is_volume = True
     lines = 0
@@ -25,8 +27,11 @@ class Block():
     break_lines_data : dict= {} # {20: 9, 19:10}
     fire_delay = 0
     fire_row = 0
+    score = 0
     fire_disp = False
     is_pause = False
+    combo = 0
+    combo_delay = 0
 
     def __init__(self, row, col, block):
         self.row = row
@@ -54,6 +59,7 @@ class Block():
         self.slide_delay = 0
 
     def change_block(self): # Only for Testing, Temporary
+        # Only for development 
         if not self.change_count >= 7:
             self.block = BLOCK_KEYS[self.change_count]
             self.change_count += 1
@@ -91,17 +97,14 @@ class Block():
 
     def move_block(self, dir):
         if self.far_row == ROWS:
-            if self.slide_delay > 2:
-                self.seize_move = True
-            else:
-                self.slide_delay += 1
+            self.seize_move = True
+
+        if dir == 'L' and self.col - 1 > 0 and not self.seize_left:
+            self.col -= 1
+        elif dir == 'R' and self.far_col < COLUMN and not self.seize_right:
+            self.col += 1
 
         if not self.seize_move:
-            if dir == 'L' and self.col - 1 > 0 and not self.seize_left:
-                self.col -= 1
-            elif dir == 'R' and self.far_col < COLUMN and not self.seize_right:
-                self.col += 1
-
             if dir == 'D' and self.far_row < ROWS and self.move_delay > 5:
                 self.row += 1
                 self.move_delay = 0
@@ -116,16 +119,16 @@ class Block():
         else:
             self.move_delay += 1
 
-    def ghost_block(self):
-        self.ghost_col = self.col
-        self.ghost_x, _ = rowcol_to_xy(self.ghost_row, self.ghost_col)
-        self.draw_block(outline=True)
-
-
+    def check_win(self):
+        if sum(grid[-1]) == 0 and len(tetris_blocks) > 1:
+            Block.is_pause = True
+            Block.is_won = True
+            WIN.play()
 
     def update(self):
         self.x, self.y = rowcol_to_xy(self.row,self.col)
         self.draw_block()
+        Block.update_combo()
 
         if not Block.is_pause:
             self.add_gravity()
@@ -133,15 +136,20 @@ class Block():
             self.break_blocks()
 
             if self.seize_move and not self.is_done:
-                self.update_grid()
-                self.is_done = True
-
                 if self.row in (1,2):
-                    Block.is_game_over = True
+                    Block.is_won = False
+                    Block.is_pause = True
                     if Block.is_volume: LOSE.play()
 
                 else:
-                    Block.spawn_block()
+                    if self.slide_delay > 15:
+                        self.update_grid()
+                        self.is_done = True
+                        Block.spawn_block()
+                        self.slide_delay = 0
+
+                    else: self.slide_delay += 1
+
 
     def avoid_collision(self):
         if self.far_col > COLUMN:
@@ -202,8 +210,6 @@ class Block():
                     if draw:
                         pygame.draw.rect(self.screen, self.color, (self.x + SIDE * j, self.y + SIDE * i, SIDE-1, SIDE-1))
 
-
-
     def update_grid(self): # Critical
         if Block.is_volume: DROP.play()
         row = self.row-1
@@ -218,17 +224,16 @@ class Block():
             col = self.col - 1
 
     def break_blocks(self):
-        for i, row_data in enumerate(list(self.data)):
-            row = self.row + i -1
-            if sum(grid[row]) == 10:
-                Block.clear_grid()
-                if row not in Block.break_lines_data:
-                    Block.break_lines_data[row] = sum(row_data)
+        if self.row > 1 and self.seize_move:
+            for i, row_data in enumerate(list(self.data)):
+                row = self.row + i - 1
+                if sum(grid[row]) == 10:
+                    if row not in Block.break_lines_data:
+                        Block.break_lines_data[row] = sum(row_data)
+                    else:
+                        Block.break_lines_data[row] += sum(row_data)
 
-                else:
-                    Block.break_lines_data[row] += sum(row_data)
-
-                self.data.remove(row_data)
+                    self.data.remove(row_data)
 
         Block.clear_grid()
 
@@ -238,9 +243,11 @@ class Block():
         Block.FIRE = FIRE
 
     @staticmethod
-    def spawn_block():
-        if not Block.is_game_over:
-            tetris_blocks.append(Block(1,4, Block.next_block))
+    def spawn_block(row = 1, col= 4, bloc = ''):
+        if Block.is_won == None:
+            if bloc == '':
+                bloc = Block.next_block
+            tetris_blocks.append(Block(row,col, bloc))
             Block.next_block = random.choice(BLOCK_KEYS)
             Block.blocks += 1
 
@@ -256,27 +263,60 @@ class Block():
                     pygame.draw.rect(Block.screen, color,(x + SIDE * j, y + SIDE * i, SIDE - 1, SIDE - 1))
 
     @staticmethod
+    def reset():
+        global grid
+
+        Block.is_won = None
+        Block.next_block = random.choice(BLOCK_KEYS)
+        Block.is_volume = True
+        Block.lines = 0
+        Block.blocks = 0
+        Block.break_lines_data= {}  # {20: 9, 19:10}
+        Block.fire_delay = 0
+        Block.fire_row = 0
+        Block.score = 0
+        Block.fire_disp = False
+        Block.is_pause = False
+        Block.combo = 0
+        Block.combo_delay = 0
+
+        grid.clear()
+        for i in range(ROWS):
+            grid.append([])
+            for _ in range(COLUMN):
+                grid[-1].append(0)
+
+        tetris_blocks.clear()
+
+        Block.spawn_block()
+
+    @staticmethod
     def clear_grid():
         del_row = []
         Block.flame_animation()
-        for k, v in list(Block.break_lines_data.items())[::-1]:
+        items = Block.break_lines_data.items()
+
+        if len(items) > Block.combo:
+            Block.combo = len(items)
+
+        for k, v in list(items)[::-1]:
             if v == COLUMN:
                 Block.lines += 1
                 grid.pop(k)
                 grid.insert(0, list(EMPTY_ROW))
 
                 del_row.append(k)
-
                 Block.fire_disp = True
                 Block.fire_row = k
 
                 for block in tetris_blocks:
-                    block.seize_move = False
                     block.row += 1
 
-        for row in del_row:
-            if Block.is_volume: BREAK_LINE.play()
-            del Block.break_lines_data[row]
+                for row in del_row:
+                    if Block.is_volume: BREAK_LINE.play()
+                    del Block.break_lines_data[row]
+
+                return
 
     @staticmethod
     def flame_animation():
@@ -284,23 +324,23 @@ class Block():
             x, y = rowcol_to_xy(Block.fire_row + 1, COLUMN + 1)
             Block.screen.blit(Block.FIRE, (x, y + 5))
 
-            if Block.fire_delay > 40:
+            if Block.fire_delay > 50:
                 Block.fire_disp = False
                 Block.fire_delay = 0
             else:
                 Block.fire_delay += 1
 
-
     @staticmethod
-    def clear():
-        global tetris_blocks , grid
+    def update_combo():
+        if 0 <= Block.combo_delay < 100 and Block.combo != 0:
+            LOC_FONT = pygame.font.SysFont('Consolas', 20)
+            text = LOC_FONT.render(LINE_COMBO[Block.combo][0], 1, WHITE)
+            x, y = rowcol_to_xy(22, 4)
+            Block.screen.blit(text, (x, y - 10))
+            Block.combo_delay += 1
 
-        Block.is_game_over = False
-        Block.next_block = random.choice(BLOCK_KEYS)
-        Block.lines = 0
-        Block.blocks = 0
-
-        grid = list(EMPTY_GRID)
-        tetris_blocks = []
-
-        Block.spawn_block()
+        else:
+            if Block.combo != 0:
+                Block.score += LINE_COMBO[Block.combo][-1]
+                Block.combo = 0
+            Block.combo_delay = 0
